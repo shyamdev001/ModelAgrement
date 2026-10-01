@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Model Agreement Generator</title>
+<style>
+  :root {
+    --bg: #f6f3ee; --card: #ffffff; --ink: #1f2430; --muted: #6b7280; --line: #e2ddd4;
+    --brand: #c8591a; --brand-dark: #a64612; --ok: #2f6b2a; --bad: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 480px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.35rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: .92rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+  label { display: block; font-size: .8rem; font-weight: 700; margin: 16px 0 6px; }
+  label:first-child { margin-top: 0; }
+  input[type=text], input[type=password], input[type=date] {
+    width: 100%; height: 48px; padding: 0 14px; font: inherit; color: inherit;
+    border: 1px solid var(--line); border-radius: 12px; background: #fff;
+  }
+  input:focus-visible, button:focus-visible, .pick:focus-within { outline: 2px solid var(--brand); outline-offset: 2px; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 12px; height: 50px; padding: 0 18px; cursor: pointer; }
+  .primary { width: 100%; margin-top: 22px; background: var(--brand); color: #fff; }
+  .primary:hover { background: var(--brand-dark); }
+  .primary:disabled { opacity: .55; cursor: default; }
+  .pick { display: flex; align-items: center; justify-content: center; height: 50px; border: 1px dashed #b9b2a6; border-radius: 12px; background: #fbfaf7; font-weight: 700; cursor: pointer; }
+  .pick input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .hint { color: var(--muted); font-size: .82rem; margin: 6px 0 0; }
+  .preview { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; padding: 12px; text-align: center; }
+  .preview img { max-width: 100%; max-height: 110px; }
+  .preview button { height: 36px; margin-top: 8px; background: transparent; color: var(--bad); }
+  .msg { margin-top: 14px; padding: 10px 12px; border-radius: 10px; font-size: .9rem; }
+  .msg.bad { background: #fbe9e7; color: var(--bad); }
+  .msg.ok { background: #e8f3e6; color: var(--ok); }
+  .link { background: none; height: auto; padding: 0; margin-top: 18px; color: var(--muted); font-weight: 600; font-size: .85rem; text-decoration: underline; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Model Agreement Generator</h1>
+  <p class="sub">PM Surya Ghar: Muft Bijli Yojana &mdash; Consumer &amp; Vendor agreement</p>
+
+  <form id="login" class="card">
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button class="primary" type="submit">Open</button>
+    <div id="loginMsg" class="msg bad" role="alert" hidden></div>
+  </form>
+
+  <form id="form" class="card" hidden>
+    <label for="name">Customer name</label>
+    <input id="name" type="text" maxlength="60" autocomplete="off" required placeholder="e.g. Rajesh Patel">
+
+    <label for="address">Address (village)</label>
+    <input id="address" type="text" maxlength="60" autocomplete="off" required placeholder="e.g. Daheda">
+
+    <label for="date">Agreement date</label>
+    <input id="date" type="date" required>
+
+    <label for="photo">Customer's signature photo</label>
+    <label class="pick"><input id="photo" type="file" accept="image/*"><span id="pickText">Choose or take a photo</span></label>
+    <p class="hint">Photograph the signature on plain white paper, in good light. Leave empty to sign on paper later.</p>
+    <div id="preview" class="preview" hidden>
+      <img id="previewImg" alt="How the signature will appear on the agreement">
+      <div><button type="button" id="removeSig">Remove signature</button></div>
+    </div>
+
+    <button class="primary" type="submit" id="go">Generate agreement</button>
+    <div id="formMsg" class="msg" role="status" hidden></div>
+    <button type="button" class="link" id="lock">Lock</button>
+  </form>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let password = sessionStorage.getItem('ma-password') || '';
+let signature = null; // PNG data URL of the cut-out signature
+
+function show(el, text, kind) {
+  el.textContent = text;
+  el.className = 'msg ' + kind;
+  el.hidden = false;
+}
+
+async function call(body) {
+  return fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+
+function unlock() {
+  $('login').hidden = true;
+  $('form').hidden = false;
+  if (!$('date').value) {
+    const now = new Date();
+    $('date').value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+  $('name').focus();
+}
+
+function lock() {
+  password = '';
+  sessionStorage.removeItem('ma-password');
+  $('form').hidden = true;
+  $('login').hidden = false;
+  $('password').value = '';
+}
+
+$('login').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('loginMsg').hidden = true;
+  const attempt = $('password').value;
+  try {
+    const res = await call({ password: attempt, checkOnly: true });
+    if (!res.ok) return show($('loginMsg'), (await res.json()).message || 'Wrong password.', 'bad');
+    password = attempt;
+    sessionStorage.setItem('ma-password', attempt);
+    unlock();
+  } catch {
+    show($('loginMsg'), 'Could not reach the server. Check your internet and try again.', 'bad');
+  }
+});
+
+$('lock').addEventListener('click', lock);
+
+/**
+ * Cuts the ink out of a photo of a signature on paper: compares every pixel with a heavily
+ * blurred copy of the photo (the "paper"), keeps what is clearly darker, and crops to it.
+ */
+function cutOutSignature(img) {
+  const scale = Math.min(1, 1100 / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.max(1, Math.round(img.naturalWidth * scale));
+  const h = Math.max(1, Math.round(img.naturalHeight * scale));
+  const canvas = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const small = Object.assign(document.createElement('canvas'), { width: Math.max(2, Math.round(w / 28)), height: Math.max(2, Math.round(h / 28)) });
+  small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
+  const paper = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const pctx = paper.getContext('2d', { willReadFrequently: true });
+  pctx.imageSmoothingQuality = 'high';
+  pctx.drawImage(small, 0, 0, w, h);
+
+  const photo = ctx.getImageData(0, 0, w, h);
+  const bg = pctx.getImageData(0, 0, w, h).data;
+  const px = photo.data;
+  let minX = w, minY = h, maxX = -1, maxY = -1, inked = 0;
+  for (let i = 0, p = 0; i < px.length; i += 4, p++) {
+    const darker = Math.max(bg[i] - px[i], bg[i + 1] - px[i + 1], bg[i + 2] - px[i + 2]);
+    const alpha = Math.max(0, Math.min(1, (darker - 24) / 60));
+    px[i + 3] = Math.round(alpha * 255);
+    if (alpha > 0.5) {
+      inked++;
+      const x = p % w, y = (p - x) / w;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+  }
+  if (inked < 150 || maxX < 0) throw new Error('No signature found in this photo. Use plain white paper and good light.');
+  if (inked > w * h * 0.35) throw new Error('This photo is too dark or busy. Use plain white paper and good light.');
+  ctx.putImageData(photo, 0, 0);
+
+  const pad = 10;
+  const cx = Math.max(0, minX - pad), cy = Math.max(0, minY - pad);
+  const cw = Math.min(w, maxX + pad) - cx, ch = Math.min(h, maxY + pad) - cy;
+  const out = Object.assign(document.createElement('canvas'), { width: cw, height: ch });
+  out.getContext('2d').drawImage(canvas, cx, cy, cw, ch, 0, 0, cw, ch);
+  return out.toDataURL('image/png');
+}
+
+function clearSignature() {
+  signature = null;
+  $('photo').value = '';
+  $('preview').hidden = true;
+  $('pickText').textContent = 'Choose or take a photo';
+}
+
+$('removeSig').addEventListener('click', clearSignature);
+
+$('photo').addEventListener('change', () => {
+  const file = $('photo').files[0];
+  $('formMsg').hidden = true;
+  if (!file) return;
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    try {
+      signature = cutOutSignature(img);
+      $('previewImg').src = signature;
+      $('preview').hidden = false;
+      $('pickText').textContent = 'Choose a different photo';
+    } catch (err) {
+      clearSignature();
+      show($('formMsg'), err.message, 'bad');
+    }
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    clearSignature();
+    show($('formMsg'), 'This file is not a photo the browser can open.', 'bad');
+  };
+  img.src = url;
+});
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const button = $('go');
+  button.disabled = true;
+  button.textContent = 'Generating…';
+  $('formMsg').hidden = true;
+  try {
+    const res = await call({ password, name: $('name').value, address: $('address').value, date: $('date').value, signature });
+    if (res.status === 401) { lock(); return show($('loginMsg'), 'Please enter the password again.', 'bad'); }
+    if (!res.ok) return show($('formMsg'), (await res.json()).message || 'Could not create the agreement.', 'bad');
+    const blob = await res.blob();
+    const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '');
+    const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: name ? name[1] : 'Model_Agreement.pdf' });
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 60000);
+    show($('formMsg'), 'Agreement downloaded. Check your Downloads.', 'ok');
+  } catch {
+    show($('formMsg'), 'Could not reach the server. Check your internet and try again.', 'bad');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Generate agreement';
+  }
+});
+
+if (password) {
+  call({ password, checkOnly: true }).then((res) => (res.ok ? unlock() : lock())).catch(() => {});
+}
+</script>
+</body>
+</html>

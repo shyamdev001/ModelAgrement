@@ -127,8 +127,8 @@ $('login').addEventListener('submit', async (e) => {
 $('lock').addEventListener('click', lock);
 
 /**
- * Cuts the ink out of a photo of a signature on paper: compares every pixel with a heavily
- * blurred copy of the photo (the "paper"), keeps what is clearly darker, and crops to it.
+ * Cuts the ink out of a photo of a signature on paper: compares every pixel with an estimate
+ * of the bare paper, redraws what is clearly darker in the pen's own colour, and crops to it.
  */
 function cutOutSignature(img) {
   const scale = Math.min(1, 1100 / Math.max(img.naturalWidth, img.naturalHeight));
@@ -138,20 +138,64 @@ function cutOutSignature(img) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(img, 0, 0, w, h);
 
-  const small = Object.assign(document.createElement('canvas'), { width: Math.max(2, Math.round(w / 28)), height: Math.max(2, Math.round(h / 28)) });
-  small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
+  const photo = ctx.getImageData(0, 0, w, h);
+  const px = photo.data;
+
+  // The paper: the brightest pixel of every block (so the ink itself never darkens it), blurred back up to full size.
+  const BLOCK = 40;
+  const bw = Math.max(2, Math.ceil(w / BLOCK)), bh = Math.max(2, Math.ceil(h / BLOCK));
+  const small = Object.assign(document.createElement('canvas'), { width: bw, height: bh });
+  const sctx = small.getContext('2d');
+  const blocks = sctx.createImageData(bw, bh);
+  blocks.data.fill(255);
+  const brightest = new Int16Array(bw * bh).fill(-1);
+  for (let y = 0, i = 0; y < h; y++) {
+    const row = Math.min(bh - 1, Math.floor(y * bh / h)) * bw;
+    for (let x = 0; x < w; x++, i += 4) {
+      const b = row + Math.min(bw - 1, Math.floor(x * bw / w));
+      const light = px[i] + px[i + 1] + px[i + 2];
+      if (light > brightest[b]) {
+        brightest[b] = light;
+        blocks.data.set([px[i], px[i + 1], px[i + 2]], b * 4);
+      }
+    }
+  }
+  sctx.putImageData(blocks, 0, 0);
   const paper = Object.assign(document.createElement('canvas'), { width: w, height: h });
   const pctx = paper.getContext('2d', { willReadFrequently: true });
   pctx.imageSmoothingQuality = 'high';
   pctx.drawImage(small, 0, 0, w, h);
-
-  const photo = ctx.getImageData(0, 0, w, h);
   const bg = pctx.getImageData(0, 0, w, h).data;
-  const px = photo.data;
+
+  // How much darker than the paper every pixel is, and how dark this pen's full-strength ink is.
+  const darker = new Uint8Array(w * h);
+  const histogram = new Uint32Array(256);
+  let strong = 0;
+  for (let i = 0, p = 0; i < px.length; i += 4, p++) {
+    const d = Math.max(0, bg[i] - px[i], bg[i + 1] - px[i + 1], bg[i + 2] - px[i + 2]);
+    darker[p] = d;
+    if (d > 40) { histogram[d]++; strong++; }
+  }
+  if (strong < 150) throw new Error('No signature found in this photo. Use plain white paper and good light.');
+  let full = 255;
+  for (let seen = 0; full > 40 && (seen += histogram[full]) < strong * 0.25; full--);
+
+  // The pen's colour: the average of the well-inked pixels. Every stroke is drawn in it, so thin strokes do not fade.
+  const ink = [0, 0, 0];
+  let inkCount = 0;
+  for (let i = 0, p = 0; i < px.length; i += 4, p++) {
+    if (darker[p] >= full * 0.6) {
+      ink[0] += px[i]; ink[1] += px[i + 1]; ink[2] += px[i + 2];
+      inkCount++;
+    }
+  }
+  const [inkR, inkG, inkB] = ink.map((sum) => Math.round(sum / inkCount));
+
+  const from = Math.max(14, full * 0.12), to = full * 0.4;
   let minX = w, minY = h, maxX = -1, maxY = -1, inked = 0;
   for (let i = 0, p = 0; i < px.length; i += 4, p++) {
-    const darker = Math.max(bg[i] - px[i], bg[i + 1] - px[i + 1], bg[i + 2] - px[i + 2]);
-    const alpha = Math.max(0, Math.min(1, (darker - 24) / 60));
+    const alpha = Math.max(0, Math.min(1, (darker[p] - from) / (to - from)));
+    px[i] = inkR; px[i + 1] = inkG; px[i + 2] = inkB;
     px[i + 3] = Math.round(alpha * 255);
     if (alpha > 0.5) {
       inked++;
@@ -164,7 +208,7 @@ function cutOutSignature(img) {
   if (inked > w * h * 0.35) throw new Error('This photo is too dark or busy. Use plain white paper and good light.');
   ctx.putImageData(photo, 0, 0);
 
-  const pad = 10;
+  const pad = 4;
   const cx = Math.max(0, minX - pad), cy = Math.max(0, minY - pad);
   const cw = Math.min(w, maxX + pad) - cx, ch = Math.min(h, maxY + pad) - cy;
   const out = Object.assign(document.createElement('canvas'), { width: cw, height: ch });

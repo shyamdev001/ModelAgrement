@@ -114,7 +114,7 @@ try:
     layout['p4CustomerDate'], layout['p4VendorDate'] = dates
     sign = find(p4, 'Sign:')
     assert len(sign) == 1
-    layout['p4Sign'] = {'x': sign[0]['rect'].x1 + 6, 'baseline': sign[0]['y'], 'maxWidth': 130, 'maxHeight': 20}
+    layout['p4Sign'] = {'x': sign[0]['rect'].x1 + 6, 'baseline': sign[0]['y'], 'maxWidth': 150, 'maxHeight': 30}
 
     for page in (p1, p4):
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)

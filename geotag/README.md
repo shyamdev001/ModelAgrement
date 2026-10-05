@@ -75,8 +75,7 @@ npm run build
 4. (Optional) add the environment variable `NOMINATIM_USER_AGENT` with your business name.
 5. Deploy. Check `https://<your-address>/api/health` answers `{"ok":true,"places":22041}`.
 
-The existing Model Agreement project keeps deploying from the repository root; the root
-`.vercelignore` keeps this folder out of it.
+The existing Model Agreement project keeps deploying from the repository root and ignores this folder.
 
 ### Settings (all optional)
 

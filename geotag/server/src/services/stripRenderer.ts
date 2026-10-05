@@ -19,7 +19,6 @@ const bold = loadFont('Carlito-Bold.ttf');
 export const STRIP_BACKGROUND = '#15181d';
 const TEXT = '#e9edf2';
 const MUTED = '#98a2b0';
-const CAPTION = 'Location of village/town · map is illustrative';
 
 /** Height of the strip for a photo this wide: about 14% of the width, never too small to read. */
 export function stripHeightFor(photoWidth: number): number {
@@ -95,14 +94,7 @@ export function renderStripSvg({ width, location, plusCode, stamp }: StripInput)
     parts.push(draw(regular, line, textX, firstBaseline + step * (i + 1), size, TEXT));
   });
 
-  // Small print on the last row, right-aligned: says plainly what the coordinates and the map are.
-  const lastLineWidth = regular.getAdvanceWidth(lines[4], lineSize);
-  const captionRoom = maxTextWidth - lastLineWidth - height * 0.12;
-  const captionSize = fit(regular, CAPTION, lineSize * 0.62, captionRoom);
-  if (captionSize >= 6) {
-    const captionWidth = regular.getAdvanceWidth(CAPTION, captionSize);
-    parts.push(draw(regular, CAPTION, width - pad - captionWidth, lastBaseline, captionSize, MUTED));
-  }
+  // The text explaining the map was removed here.
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
 <rect width="${width}" height="${height}" fill="${STRIP_BACKGROUND}"/>

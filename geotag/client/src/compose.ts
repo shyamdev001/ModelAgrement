@@ -43,16 +43,17 @@ const EXTENSIONS: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': '
 
 export async function appendStrip(photo: LoadedPhoto, stripSvg: string, stripHeight: number, type: string): Promise<{ blob: Blob; extension: string }> {
   const tooBig = new PhotoError('This photo is too large for the browser on this device. Please use a smaller photo.');
+  const margin = Math.round(stripHeight * 0.2); // margin to push it slightly up
   const canvas = document.createElement('canvas');
   canvas.width = photo.width;
-  canvas.height = photo.height + stripHeight;
+  canvas.height = photo.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw tooBig;
 
   ctx.drawImage(photo.source, 0, 0);
   const stripUrl = URL.createObjectURL(new Blob([stripSvg], { type: 'image/svg+xml' }));
   try {
-    ctx.drawImage(await loadImage(stripUrl), 0, photo.height, photo.width, stripHeight);
+    ctx.drawImage(await loadImage(stripUrl), 0, photo.height - stripHeight - margin, photo.width, stripHeight);
   } finally {
     URL.revokeObjectURL(stripUrl);
   }

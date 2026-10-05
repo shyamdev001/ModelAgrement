@@ -1,0 +1,6 @@
+node_modules
+dist
+.env
+.vercel
+# Downloaded source data (about 100 MB). Only needed to rebuild server/data/gujarat-locations.db.
+server/data/raw
